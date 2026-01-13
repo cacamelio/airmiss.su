@@ -1,7 +1,5 @@
 #pragma once
 
-#include "sdk_misc.hpp"
-
 class c_world_modulation
 {
 private:

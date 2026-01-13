@@ -1471,7 +1471,6 @@ void c_menu::draw_ui_items()
 				{
 					begin_child(CXOR("Changers"))
 					{
-						multi_combo(CXOR("Breaker animation"), g_cfg.misc.local_breaker, { XOR("static legs air"), XOR("reverse legs"), XOR("allah legs") });
 						combo(CXOR("Ragdoll gravity"), &g_cfg.misc.ragdoll_gravity, ragdoll_gravities, IM_ARRAYSIZE(ragdoll_gravities));
 						checkbox(CXOR("Clantag changer"), &g_cfg.misc.clantag);
 					}

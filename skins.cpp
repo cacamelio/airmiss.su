@@ -1,8 +1,6 @@
 #include "globals.hpp"
 #include "skins.hpp"
 
-using EQUIP_WEARABLE_FN = int(__thiscall*)(void*, void*);
-
 namespace string_convert
 {
 	INLINE std::string to_string(const std::wstring_view str)
@@ -54,7 +52,6 @@ namespace skin_changer
 	const char* default_mask = CXOR("models/player/holiday/facemasks/facemask_battlemask.mdl");
 
 	std::unordered_map<std::string, int> weapon_indexes{};
-	static std::unordered_map <std::string_view, const char*> iconOverrides;
 
 #ifdef LEGACY
 	std::array< std::string, max_knifes - 1 > knife_models{
@@ -151,8 +148,7 @@ namespace skin_changer
 	struct weapon_info
 	{
 		constexpr weapon_info(const char* model, const char* icon = nullptr, int animindex = -1)
-			: model(model), icon(icon), animindex(animindex) {
-		}
+			: model(model), icon(icon), animindex(animindex) {}
 
 		const char* model;
 		const char* icon;
@@ -1140,7 +1136,7 @@ namespace skin_changer
 
 			static int force_update_count = 0;
 
-			//*reinterpret_cast<int*>(uintptr_t(glove) + 0x64) = -1; //note from @cacamelio : outdated offset that causes bugs when having custom gloves in first person
+			//*reinterpret_cast<int*>(uintptr_t(glove) + 0x64) = -1;
 
 			auto& paint_kit = glove->fallback_paint_kit();
 
@@ -1178,18 +1174,11 @@ namespace skin_changer
 				if (weapon_indexes.find(replacement_item->model) == weapon_indexes.end())
 					weapon_indexes.emplace(replacement_item->model, HACKS->model_info->get_model_index(replacement_item->model));
 
-				if (const auto def = HACKS->item_schema->getItemDefinitionInterface(item_defenition_index_t{ definition_index })) {
-					glove->set_model_index(HACKS->model_info->get_model_index(def->getWorldDisplayModel()));
-					glove->pre_update(0);
-				}
-
+				glove->set_model_index(weapon_indexes.at(replacement_item->model));
 				const auto networkable = glove->get_networkable_entity();
 
 				using fn = void(__thiscall*)(void*, const int);
 				memory::get_virtual(networkable, 6).cast<fn>()(networkable, 0);
-
-				offsets::equip_wearable.cast<EQUIP_WEARABLE_FN>()(glove, HACKS->local);
-				HACKS->local->body() = 1;
 
 				if (old_glove != glove_index)
 				{
@@ -1197,6 +1186,10 @@ namespace skin_changer
 					old_glove = glove_index;
 				}
 
+				// ghetto fix
+				// it gets 0 item definition index and call force update multiple times
+				// but glove is still applied
+				// idk how to fix it, let's just update it once then
 				if (g_cfg.misc.menu && force_update_count < 1)
 				{
 					++force_update_count;
@@ -1214,11 +1207,10 @@ namespace skin_changer
 		if (!HACKS->local)
 			return;
 
-		if (stage == FRAME_NET_UPDATE_POSTDATAUPDATE_END) {
-			glove_changer();
-		}
-
 		mask_changer(stage);
+
+		if (stage == FRAME_NET_UPDATE_POSTDATAUPDATE_END)
+			glove_changer();
 
 		if (!HACKS->weapon)
 			return;

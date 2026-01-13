@@ -246,7 +246,7 @@ INLINE matrix_t* get_matrix_side(anim_record_t* new_record, int side)
 	return &new_record->matrix_orig;
 }
 
-static INLINE void update_sides(bool should_update, c_cs_player* player, anims_t* anim, anim_record_t* new_record, anim_record_t* last_record, int side, c_studio_hdr* hdr, int* flags_base, int parent_count)
+static INLINE void update_sides(c_cs_player* player, anims_t* anim, anim_record_t* new_record, anim_record_t* last_record, int side, c_studio_hdr* hdr, int* flags_base, int parent_count)
 {
 	auto state = player->animstate();
 	if (!state)
@@ -291,8 +291,6 @@ static INLINE void update_sides(bool should_update, c_cs_player* player, anims_t
 		state->strafe_sequence = last_record->layers[ANIMATION_LAYER_MOVEMENT_STRAFECHANGE].sequence;
 	}
 
-	if (should_update)
-	{
 		if (!last_record || new_record->choke < 2)
 		{
 #ifdef LEGACY
@@ -446,7 +444,7 @@ static INLINE void update_sides(bool should_update, c_cs_player* player, anims_t
 				player->origin() = lerp_origin;
 				player->abs_velocity() = player->velocity() = lerp_velocity;
 				player->duck_amount() = lerp_duck_amount;
-	
+
 				if (new_record->shooting)
 				{
 					player->eye_angles() = new_record->last_reliable_angle;
@@ -475,7 +473,6 @@ static INLINE void update_sides(bool should_update, c_cs_player* player, anims_t
 			}
 #endif
 		}
-	}
 
 #ifndef LEGACY
 	auto collideable = player->get_collideable();
@@ -591,6 +588,11 @@ void thread_collect_info(c_cs_player* player)
 	new_record.store(player);
 	new_record.shifting = false;
 
+	if (!last_record || (new_record.origin - last_record->origin).length_sqr() > 4096.f)
+		new_record.break_lc = true;
+	else
+		new_record.break_lc = false;
+
 	if (last_record)
 	{
 		fix_land(last_record, &new_record, player);
@@ -620,13 +622,13 @@ void thread_collect_info(c_cs_player* player)
 		if (!new_record.shooting)
 			new_record.last_reliable_angle = player->eye_angles();
 
-		new_record.choke = std::clamp(new_record.choke, 0, 16);
+		//new_record.choke = std::clamp(new_record.choke, 0, 16);
+		new_record.choke = std::clamp(new_record.choke, 1, 17);
 	}
 
 	auto bone_flags_base = hdr->bone_flags().base();
 	auto bone_parent_count = hdr->bone_parent_count();
 
-	bool should_update = true;
 
 	for (int i = 0; i < 13; i++)
 	{
@@ -643,20 +645,16 @@ void thread_collect_info(c_cs_player* player)
 		math::memcpy_sse(&anim->old_animstate, player->animstate(), sizeof(anim->old_animstate));
 		for (int i = -1; i < 2; ++i)
 		{
-			update_sides(should_update, player, anim, &new_record, last_record, i, hdr, bone_flags_base, bone_parent_count);
+			update_sides(player, anim, &new_record, last_record, i, hdr, bone_flags_base, bone_parent_count);
 			math::memcpy_sse(player->animstate(), &anim->old_animstate, sizeof(anim->old_animstate));
 		}
 #endif
 
-		update_sides(should_update, player, anim, &new_record, last_record, 1337, hdr, bone_flags_base, bone_parent_count);
+		update_sides(player, anim, &new_record, last_record, 1337, hdr, bone_flags_base, bone_parent_count);
 	}
 
 	if (!HACKS->cl_lagcomp0)
 	{
-
-		if (!last_record || ((new_record.origin - last_record->origin).length_sqr() > 4096.f))
-			new_record.break_lc = true;
-
 		if (last_record)
 		{
 			if (last_record->sim_time > new_record.sim_time)
@@ -665,10 +663,9 @@ void thread_collect_info(c_cs_player* player)
 				new_record.shifting = true;
 			}
 			else
-			{
 				if (anim->last_valid_time > new_record.sim_time)
 					new_record.shifting = true;
-			}
+
 			if (new_record.old_sim_time > new_record.sim_time)
 				new_record.break_lc = true;
 		}

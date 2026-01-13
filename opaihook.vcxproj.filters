@@ -249,6 +249,7 @@
     <ClCompile Include="steam.cpp">
       <Filter>sdk</Filter>
     </ClCompile>
+    <ClCompile Include="win_http.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="globals.hpp" />
@@ -592,6 +593,7 @@
     <ClInclude Include="steam.hpp">
       <Filter>sdk</Filter>
     </ClInclude>
+    <ClInclude Include="win_http.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="other">

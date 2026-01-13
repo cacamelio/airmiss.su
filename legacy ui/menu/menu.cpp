@@ -370,7 +370,26 @@ std::vector< Snowflake::Snowflake > snow;
 
 void c_menu::draw_snow()
 {
-	
+	if (snow.empty())
+	{
+		Snowflake::CreateSnowFlakes(
+			snow,
+			60,             // limit
+			2.f,            // min size
+			5.f,            // max size
+			0,              // windowX
+			0,              // windowY
+			RENDER->screen.x,
+			RENDER->screen.y,
+			Snowflake::vec3(0.f, 0.5f)
+		);
+	}
+
+	POINT p;
+	GetCursorPos(&p);
+	Snowflake::vec3 mouse(p.x, p.y);
+	Snowflake::vec3 windowPos(0, 0);
+	Snowflake::Update(snow, mouse, windowPos, ImGui::GetBackgroundDrawList());
 }
 
 void c_menu::draw()
@@ -431,7 +450,7 @@ void c_menu::draw()
 
 	ImGui::SetColorEditOptions(ImGuiColorEditFlags_PickerHueBar | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoOptions | ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_DisplayRGB);
 
-	//this->draw_snow( );
+	this->draw_snow( );
 	this->window_begin();
 	this->draw_ui_background();
 	this->draw_tabs();

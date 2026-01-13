@@ -109,8 +109,6 @@ namespace penetration
 		return range;
 	}
 
-
-	//eclipse
 	INLINE void clip_trace_to_player(const vec3_t start, const vec3_t& end, unsigned int mask, i_trace_filter* filter, c_game_trace* tr, c_cs_player* player, should_hit_fn should_hit)
 	{
 		if (should_hit && !should_hit(player, mask))
@@ -134,7 +132,6 @@ namespace penetration
 			*tr = trace;
 	}
 
-	//eclipse
 	INLINE void clip_trace_to_players(const vec3_t& start, const vec3_t& end, unsigned int mask, i_trace_filter* filter, c_game_trace* tr, should_hit_fn should_hit)
 	{
 		float smallest_fraction = tr->fraction;

@@ -473,7 +473,6 @@ struct configs_t
 
 		int ragdoll_gravity{};
 		unsigned int local_breaker{};
-		int rain{};
 
 		bool clantag{};
 		bool bypass_sv_pure{};

@@ -18,7 +18,7 @@
 #include <VirtualizerSDK.h>
 #endif
 */
-
+	
 void draw_hitbox__(c_cs_player* player, matrix3x4_t* bones, int idx, int idx2, bool dur = false)
 {
 	auto studio_model = HACKS->model_info->get_studio_model(player->get_model());
@@ -534,29 +534,29 @@ void c_ragebot::update_predicted_eye_pos()
 void c_ragebot::prepare_players_for_scan()
 {
 	LISTENER_ENTITY->for_each_player([&](c_cs_player* player)
+	{
+		auto& rage = rage_players[player->index()];
+
+		if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
 		{
-			auto& rage = rage_players[player->index()];
-
-			if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
-			{
-				if (rage.valid)
-					rage.reset();
-
-				return;
-			}
-
-			if (rage.player != player)
-			{
+			if (rage.valid)
 				rage.reset();
-				rage.player = player;
-				return;
-			}
 
-			rage.distance = HACKS->local->origin().dist_to(player->origin());
-			rage.valid = true;
+			return;
+		}
 
-			++rage_player_iter;
-		});
+		if (rage.player != player)
+		{
+			rage.reset();
+			rage.player = player;
+			return;
+		}
+
+		rage.distance = HACKS->local->origin().dist_to(player->origin());
+		rage.valid = true;
+
+		++rage_player_iter;
+	});
 }
 
 std::vector<rage_point_t> get_hitbox_points(int damage, std::vector<int>& hitboxes, vec3_t& eye_pos, vec3_t& predicted_eye_pos, rage_player_t* rage, anim_record_t* record, bool predicted = false)
@@ -578,15 +578,6 @@ std::vector<rage_point_t> get_hitbox_points(int damage, std::vector<int>& hitbox
 	auto local_anims = ANIMFIX->get_local_anims();
 	auto& start_eye_pos = predicted ? predicted_eye_pos : local_anims->eye_pos;
 
-	float backup_pose;
-
-	backup_pose = HACKS->local->pose_parameter()[12];
-
-	HACKS->local->pose_parameter()[12] = (local_anims->eye_pos.x + 90.f) / 180.f;
-	const auto ret = HACKS->local->setup_bones(HACKS->local->bone_cache().base(), BONE_USED_BY_HITBOX, nullptr ? -1 : 128, HACKS->global_vars->curtime);
-
-	HACKS->local->pose_parameter()[12] = backup_pose;
-
 	int wrong_damage_counter = 0;
 	for (auto& hitbox : hitboxes)
 	{
@@ -607,26 +598,26 @@ std::vector<rage_point_t> get_hitbox_points(int damage, std::vector<int>& hitbox
 
 #ifndef LEGACY
 		point.safety = [&]()
+		{
+			auto safety = 0;
+
+			matrix3x4_t* matrices[]
 			{
-				auto safety = 0;
+				record->matrix_left.matrix,
+				record->matrix_left.roll_matrix,
+				record->matrix_right.matrix,
+				record->matrix_right.roll_matrix,
+				record->matrix_zero.matrix,
+			};
 
-				matrix3x4_t* matrices[]
-				{
-					record->matrix_left.matrix,
-					record->matrix_left.roll_matrix,
-					record->matrix_right.matrix,
-					record->matrix_right.roll_matrix,
-					record->matrix_zero.matrix,
-				};
+			for (int i = 0; i < 5; ++i)
+			{
+				if (can_hit_hitbox(start_eye_pos, aim_point, rage, hitbox, matrices[i], record))
+					++safety;
+			}
 
-				for (int i = 0; i < 5; ++i)
-				{
-					if (can_hit_hitbox(start_eye_pos, aim_point, rage, hitbox, matrices[i], record))
-						++safety;
-				}
-
-				return safety;
-			}();
+			return safety;
+		}();
 #endif
 
 		out.emplace_back(point);
@@ -660,10 +651,10 @@ void player_move(c_cs_player* player, anim_record_t* record)
 
 			const auto dot = record->prediction.velocity.dot(t.plane.normal);
 			if (dot < 0.f)
-				record->prediction.velocity -= vec3_t{ dot * t.plane.normal.x, dot * t.plane.normal.y, dot * t.plane.normal.z };
+				record->prediction.velocity -= vec3_t{ dot* t.plane.normal.x, dot* t.plane.normal.y, dot* t.plane.normal.z };
 
 			end = t.end + record->prediction.velocity * TICKS_TO_TIME(1.f - t.fraction);
-
+ 
 			HACKS->engine_trace->trace_ray(ray_t(t.end, end, record->mins, record->maxs), MASK_PLAYERSOLID, &filter, &t);
 
 			if (t.fraction == 1.f)
@@ -804,36 +795,36 @@ void pre_cache_centers(int damage, std::vector<int>& hitboxes, vec3_t& predicted
 		return;
 
 	auto get_overall_damage = [&](anim_record_t* record)
+	{
+		rage->points_to_scan.clear();
+		rage->points_to_scan.reserve(MAX_SCANNED_POINTS);
+
+		auto predicted_hitbox_points = get_hitbox_points(damage, hitboxes, predicted_eye_pos, predicted_eye_pos, rage, record, true);
+		if (predicted_hitbox_points.empty())
 		{
-			rage->points_to_scan.clear();
-			rage->points_to_scan.reserve(MAX_SCANNED_POINTS);
+			auto hitbox_points = get_hitbox_points(damage, hitboxes, anim->eye_pos, predicted_eye_pos, rage, record, true);
 
-			auto predicted_hitbox_points = get_hitbox_points(damage, hitboxes, predicted_eye_pos, predicted_eye_pos, rage, record, true);
-			if (predicted_hitbox_points.empty())
+			int overall_damage = 0;
+			for (auto& point : hitbox_points)
 			{
-				auto hitbox_points = get_hitbox_points(damage, hitboxes, anim->eye_pos, predicted_eye_pos, rage, record, true);
-
-				int overall_damage = 0;
-				for (auto& point : hitbox_points)
-				{
-					rage->points_to_scan.emplace_back(point);
-					overall_damage += point.damage;
-				}
-
-				return overall_damage;
+				rage->points_to_scan.emplace_back(point);
+				overall_damage += point.damage;
 			}
-			else
+
+			return overall_damage;
+		}
+		else
+		{
+			int overall_damage = 0;
+			for (auto& point : predicted_hitbox_points)
 			{
-				int overall_damage = 0;
-				for (auto& point : predicted_hitbox_points)
-				{
-					rage->points_to_scan.emplace_back(point);
-					overall_damage += point.damage;
-				}
-
-				return overall_damage;
+				rage->points_to_scan.emplace_back(point);
+				overall_damage += point.damage;
 			}
-		};
+
+			return overall_damage;
+		}
+	};
 
 	rage->restore.store(rage->player);
 
@@ -1003,26 +994,26 @@ void collect_damage_from_multipoints(int damage, vec3_t& predicted_eye_pos, rage
 
 #ifndef LEGACY
 		point.safety = [&]()
+		{
+			auto safety = 0;
+
+			matrix3x4_t* matrices[]
 			{
-				auto safety = 0;
+				record->matrix_left.matrix,
+				record->matrix_left.roll_matrix,
+				record->matrix_right.matrix,
+				record->matrix_right.roll_matrix,
+				record->matrix_zero.matrix,
+			};
 
-				matrix3x4_t* matrices[]
-				{
-					record->matrix_left.matrix,
-					record->matrix_left.roll_matrix,
-					record->matrix_right.matrix,
-					record->matrix_right.roll_matrix,
-					record->matrix_zero.matrix,
-				};
+			for (int i = 0; i < 5; ++i)
+			{
+				if (can_hit_hitbox(start_eye_pos, multipoint.first, rage, points.hitbox, matrices[i], record))
+					++safety;
+			}
 
-				for (int i = 0; i < 5; ++i)
-				{
-					if (can_hit_hitbox(start_eye_pos, multipoint.first, rage, points.hitbox, matrices[i], record))
-						++safety;
-				}
-
-				return safety;
-			}();
+			return safety;
+		}();
 #endif
 		rage->points_to_scan.emplace_back(point);
 	}
@@ -1046,7 +1037,7 @@ void c_ragebot::do_hitscan(rage_player_t* rage)
 	{
 		auto matrix_to_aim = rage->hitscan_record->extrapolated ? rage->hitscan_record->predicted_matrix : rage->hitscan_record->matrix_orig.matrix;
 		LAGCOMP->set_record(rage->player, rage->hitscan_record, matrix_to_aim);
-
+	
 		int threads_count = 0;
 
 		for (auto& points : rage->points_to_scan)
@@ -1075,19 +1066,19 @@ void c_ragebot::scan_players()
 	int threads_count = 0;
 
 	LISTENER_ENTITY->for_each_player([&](c_cs_player* player)
-		{
-			if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
-				return;
+	{
+		if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
+			return;
 
-			auto rage = &rage_players[player->index()];
-			if (!rage || !rage->player || rage->player != player)
-				return;
+		auto rage = &rage_players[player->index()];
+		if (!rage || !rage->player || rage->player != player)
+			return;
 
-			++threads_count;
+		++threads_count;
 
-			auto dmg = get_min_damage(rage->player);
-			THREAD_POOL->add_task(pre_cache_centers, dmg, std::ref(hitboxes), std::ref(predicted_eye_pos), rage);
-		});
+		auto dmg = get_min_damage(rage->player);
+		THREAD_POOL->add_task(pre_cache_centers, dmg, std::ref(hitboxes), std::ref(predicted_eye_pos), rage);
+	});
 
 	if (threads_count < 1)
 		return;
@@ -1095,16 +1086,16 @@ void c_ragebot::scan_players()
 	THREAD_POOL->wait_all();
 
 	LISTENER_ENTITY->for_each_player([&](c_cs_player* player)
-		{
-			if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
-				return;
+	{
+		if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
+			return;
 
-			auto rage = &rage_players[player->index()];
-			if (!rage || !rage->player || rage->player != player)
-				return;
+		auto rage = &rage_players[player->index()];
+		if (!rage || !rage->player || rage->player != player)
+			return;
 
-			do_hitscan(rage);
-		});
+		do_hitscan(rage);
+	});
 }
 
 void c_ragebot::choose_best_point()
@@ -1113,67 +1104,76 @@ void c_ragebot::choose_best_point()
 		&& (HACKS->weapon->is_auto_sniper() || HACKS->weapon->is_heavy_pistols() || HACKS->weapon->active_weapon() == WEAPON_AWP);
 
 	LISTENER_ENTITY->for_each_player([&](c_cs_player* player)
+	{
+		if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
+			return;
+
+		auto rage = &rage_players[player->index()];
+		if (!rage || !rage->player || rage->player != player)
+			return;
+
+		auto damage = get_min_damage(rage->player);
+		auto get_best_aim_point = [&]() -> rage_point_t
 		{
-			if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
-				return;
+			rage_point_t best{};
+			rage_point_t fallback{}; //cacacc logic
 
-			auto rage = &rage_players[player->index()];
-			if (!rage || !rage->player || rage->player != player)
-				return;
+			std::sort(rage->points_to_scan.begin(), rage->points_to_scan.end(), [](const rage_point_t& a, const rage_point_t& b) {
+				return a.damage > b.damage;
+			});
 
-			auto damage = get_min_damage(rage->player);
-			auto get_best_aim_point = [&]() -> rage_point_t
-				{
-					rage_point_t best{};
-					std::sort(rage->points_to_scan.begin(), rage->points_to_scan.end(), [](const rage_point_t& a, const rage_point_t& b) {
-						return a.damage > b.damage;
-						});
+			for (auto& point : rage->points_to_scan) {
+				if (point.safety > fallback.safety)
+					fallback = point;
+			}
+			if (!best.found)
+				best = fallback; // end cacacc logic
 
-					for (auto& point : rage->points_to_scan)
-					{
-						auto is_body = point.hitbox == HITBOX_PELVIS || point.hitbox == HITBOX_STOMACH;
+			for (auto& point : rage->points_to_scan)
+			{
+				auto is_body = point.hitbox == HITBOX_PELVIS || point.hitbox == HITBOX_STOMACH;
 
-						if (point.damage < damage)
-							continue;
-
-						if (g_cfg.binds[force_body_b].toggled && !is_body)
-							continue;
+				if (point.damage < damage)
+					continue;
+				
+				if (g_cfg.binds[force_body_b].toggled && !is_body)
+					continue;
 
 #ifndef LEGACY
-						if (g_cfg.binds[force_sp_b].toggled && point.safety < 5)
-							continue;
+				if (g_cfg.binds[force_sp_b].toggled && point.safety < 5)
+					continue;
 #endif
-						if (point.safety == 5 && rage_config.prefer_safe)
-						{
-							point.found = true;
-							return point;
-						}
-						else if (is_body && (point.damage >= player->health() || prefer_baim_on_dt || rage_config.prefer_body))
-						{
-							point.found = true;
-							return point;
-						}
-						else
-						{
-							if (point.damage > best.damage)
-							{
-								best = point;
-								best.found = true;
-							}
-						}
+				if (point.safety == 5 && rage_config.prefer_safe)
+				{
+					point.found = true;
+					return point;
+				}
+				else if (is_body && (point.damage >= player->health() || prefer_baim_on_dt || rage_config.prefer_body))
+				{
+					point.found = true;
+					return point;
+				}
+				else
+				{
+					if (point.damage > best.damage)
+					{
+						best = point;
+						best.found = true;
 					}
-
-					return best;
-				};
-
-			auto best_point = get_best_aim_point();
-			if (best_point.found)
-			{
-				rage->best_point = best_point;
-				rage->best_record = rage->hitscan_record;
-				rage->best_point.found = true;
+				}
 			}
-		});
+
+			return best;
+		};
+
+		auto best_point = get_best_aim_point();
+		if (best_point.found)
+		{
+			rage->best_point = best_point;
+			rage->best_record = rage->hitscan_record;
+			rage->best_point.found = true;
+		}
+	});
 }
 
 void c_ragebot::auto_revolver()
@@ -1343,82 +1343,82 @@ void c_ragebot::knife_bot()
 	knife_point_t best{};
 
 	LISTENER_ENTITY->for_each_player([&](c_cs_player* player)
+	{
+		if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
+			return;
+
+		auto anims = ANIMFIX->get_anims(player->index());
+		if (!anims || anims->records.empty())
+			return;
+
+		auto first_find = std::find_if(anims->records.begin(), anims->records.end(), [&](anim_record_t& record) {
+			return LAGCOMP->is_tick_valid(record.shifting, record.break_lc, record.sim_time);
+			});
+
+		anim_record_t* first = nullptr;
+		if (first_find != anims->records.end())
+			first = &*first_find;
+
+		restore_record_t backup{};
+		backup.store(player);
+
+		if (!first)
 		{
-			if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
-				return;
-
-			auto anims = ANIMFIX->get_anims(player->index());
-			if (!anims || anims->records.empty())
-				return;
-
-			auto first_find = std::find_if(anims->records.begin(), anims->records.end(), [&](anim_record_t& record) {
-				return LAGCOMP->is_tick_valid(record.shifting, record.break_lc, record.sim_time);
-				});
-
-			anim_record_t* first = nullptr;
-			if (first_find != anims->records.end())
-				first = &*first_find;
-
-			restore_record_t backup{};
-			backup.store(player);
-
-			if (!first)
-			{
-				backup.restore(player);
-				return;
-			}
-
-			{
-				{
-					LAGCOMP->set_record(player, first, first->matrix_orig.matrix);
-
-					for (auto& a : knife_ang)
-					{
-						if (!can_knife(player, first, a, best_stab))
-							continue;
-
-						best.point = a;
-						best.record = first;
-						break;
-					}
-				}
-
-				{
-					auto last_find = std::find_if(anims->records.rbegin(), anims->records.rend(), [&](anim_record_t& record) {
-						return LAGCOMP->is_tick_valid(record.shifting, record.break_lc, record.sim_time);
-						});
-
-					anim_record_t* last = nullptr;
-					if (last_find != anims->records.rend())
-						last = &*last_find;
-
-					if (!last || last == first)
-					{
-						backup.restore(player);
-						return;
-					}
-
-					LAGCOMP->set_record(player, last, last->matrix_orig.matrix);
-
-					for (auto& a : knife_ang)
-					{
-						if (!can_knife(player, last, a, best_stab))
-							continue;
-
-						best.point = a;
-						best.record = last;
-						break;
-					}
-				}
-			}
 			backup.restore(player);
+			return;
+		}
 
-			if (best.record)
+		{
 			{
-				backup.restore(player);
-				return;
+				LAGCOMP->set_record(player, first, first->matrix_orig.matrix);
+
+				for (auto& a : knife_ang)
+				{
+					if (!can_knife(player, first, a, best_stab))
+						continue;
+
+					best.point = a;
+					best.record = first;
+					break;
+				}
 			}
-		});
+
+			{
+				auto last_find = std::find_if(anims->records.rbegin(), anims->records.rend(), [&](anim_record_t& record) {
+					return LAGCOMP->is_tick_valid(record.shifting, record.break_lc, record.sim_time);
+					});
+
+				anim_record_t* last = nullptr;
+				if (last_find != anims->records.rend())
+					last = &*last_find;
+
+				if (!last || last == first)
+				{
+					backup.restore(player);
+					return;
+				}
+
+				LAGCOMP->set_record(player, last, last->matrix_orig.matrix);
+
+				for (auto& a : knife_ang)
+				{
+					if (!can_knife(player, last, a, best_stab))
+						continue;
+
+					best.point = a;
+					best.record = last;
+					break;
+				}
+			}
+		}
+		backup.restore(player);
+
+		if (best.record)
+		{
+			backup.restore(player);
+			return;
+		}
+	});
 
 	if (supress_doubletap_choke && best.record)
 	{
@@ -1489,26 +1489,26 @@ void c_ragebot::run()
 	best_rage_player.reset();
 
 	LISTENER_ENTITY->for_each_player([&](c_cs_player* player)
+	{
+		if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
+			return;
+
+		auto rage = &rage_players[player->index()];
+		if (!rage || !rage->player || rage->player != player)
+			return;
+
+		if (!rage->start_scans)
+			return;
+
+		if (!rage->best_point.found)
+			return;
+
+		if (lowest_distance > rage->distance)
 		{
-			if (!player->is_alive() || player->dormant() || player->has_gun_game_immunity())
-				return;
-
-			auto rage = &rage_players[player->index()];
-			if (!rage || !rage->player || rage->player != player)
-				return;
-
-			if (!rage->start_scans)
-				return;
-
-			if (!rage->best_point.found)
-				return;
-
-			if (lowest_distance > rage->distance)
-			{
-				lowest_distance = rage->distance;
-				best_rage_player = *rage;
-			}
-		});
+			lowest_distance = rage->distance;
+			best_rage_player = *rage;
+		}
+	});
 
 	const auto& best_point = best_rage_player.best_point;
 	if (best_rage_player.player && best_point.found && best_rage_player.start_scans)
